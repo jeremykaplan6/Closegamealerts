@@ -80,8 +80,8 @@ def clock_string_to_minutes(clock_str):
     return int(m.group(1)) + int(m.group(2)) / 60.0
 
 
-def get_minutes_remaining(status):
-    """Time remaining in minutes from status. None if not in progress or unknown."""
+def get_minutes_remaining_in_period(status):
+    """Time remaining in the *current period* (quarter/half) in minutes. None if unknown."""
     period = status.get("period", 0)
     if not period or period <= 0:
         return None
@@ -92,6 +92,18 @@ def get_minutes_remaining(status):
         except (TypeError, ValueError):
             pass
     return clock_string_to_minutes(status.get("displayClock", "") or "")
+
+
+def is_in_final_period(status, is_college):
+    """
+    True if we're in the period where 'time left' = time left in game (or OT).
+    NBA: Q4 or OT (period >= 4). NCAA: 2nd half or OT (period >= 2).
+    ESPN's clock is per-period, so we only alert in these periods.
+    """
+    period = status.get("period", 0) or 0
+    if is_college:
+        return period >= 2  # 2nd half or OT
+    return period >= 4  # Q4 or OT
 
 
 def format_quarter(status):
@@ -253,11 +265,13 @@ def process_league(data, league_key, is_college):
         except (TypeError, ValueError):
             continue
         score_diff = abs(home_score - away_score)
-        minutes_remaining = get_minutes_remaining(status)
-
-        if minutes_remaining is None:
+        # ESPN clock is per-period; only treat as "final 5 min" in last period (Q4/2nd half) or OT
+        if not is_in_final_period(status, is_college):
             continue
-        if minutes_remaining <= MAX_MINUTES and score_diff <= MAX_SCORE_DIFF:
+        minutes_in_period = get_minutes_remaining_in_period(status)
+        if minutes_in_period is None:
+            continue
+        if minutes_in_period <= MAX_MINUTES and score_diff <= MAX_SCORE_DIFF:
             game_id = game.get("id") or ""
             alert_key = f"{league_key}:{game_id}" if game_id else ""
             if alert_key and alert_key not in alerted_games:
