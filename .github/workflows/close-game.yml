@@ -1,0 +1,27 @@
+# Run close game detector every 5 minutes. No laptop needed.
+# Add repository secrets: PUSHOVER_APP_TOKEN, PUSHOVER_USER_KEY
+name: Close game detector
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # every 5 minutes
+  workflow_dispatch:       # allow manual run
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: .state
+          key: close-game-state
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install requests
+        run: pip install requests
+      - name: Run one check
+        env:
+          PUSHOVER_APP_TOKEN: ${{ secrets.PUSHOVER_APP_TOKEN }}
+          PUSHOVER_USER_KEY: ${{ secrets.PUSHOVER_USER_KEY }}
+        run: python3 day06_close_game_detector.py --once
