@@ -204,6 +204,45 @@ def format_time_left(status):
     return (status.get("displayClock") or "").strip() or "?"
 
 
+def _is_national_market(market):
+    """True if market is national (we only show national TV in alerts)."""
+    if not market:
+        return False
+    if isinstance(market, str):
+        return market.lower() == "national"
+    if isinstance(market, dict):
+        t = (market.get("type") or market.get("market") or "").lower()
+        return t == "national"
+    return False
+
+
+def get_network(comp):
+    """Get national TV network string (e.g. 'ESPN', 'ABC', 'TNT'). Returns '' if unknown or only regional."""
+    # comp.broadcasts is list of { "market": "national", "names": ["ABC"] } — prefer national only
+    national_names = []
+    for item in comp.get("broadcasts") or []:
+        if not _is_national_market(item.get("market")):
+            continue
+        names = item.get("names") or []
+        if names and isinstance(names[0], str):
+            national_names.append((names[0] or "").strip())
+    if national_names:
+        return national_names[0]
+    # geoBroadcasts: market.type "National" or market.id 1
+    for gb in comp.get("geoBroadcasts") or []:
+        market = gb.get("market") or {}
+        if not _is_national_market(market):
+            continue
+        short = (gb.get("media") or {}).get("shortName")
+        if short and isinstance(short, str):
+            return short.strip()
+    # Fallback: comp.broadcast (often set for primary national feed when no breakdown)
+    b = comp.get("broadcast")
+    if b and isinstance(b, str):
+        return b.strip()
+    return ""
+
+
 def get_live_game_keys(events, league_key):
     """Return set of 'league_key:game_id' for games currently in progress (state == 'in')."""
     keys = set()
@@ -278,8 +317,11 @@ def process_league(data, league_key, is_college):
                 period_str = format_period_college(status) if is_college else format_quarter(status)
                 time_left = format_time_left(status)
                 score_str = f"{away_score}-{home_score}"
+                network = get_network(comp)
                 sport = "NCAA" if is_college else "NBA"
                 msg = f"🔥 {team_a} vs {team_b} | {score_str} | {period_str} {time_left}"
+                if network:
+                    msg += f" | {network}"
                 print(f"CLOSE GAME ({sport}): {msg}")
                 send_pushover(f"Close Game ({sport})", msg)
                 alerted_games.add(alert_key)
