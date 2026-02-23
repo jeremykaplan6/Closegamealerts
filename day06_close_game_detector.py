@@ -10,7 +10,7 @@ NBA_SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/basketball/n
 NCAA_SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard"
 PUSHOVER_URL = "https://api.pushover.net/1/messages.json"
 CHECK_INTERVAL = 5
-MAX_MINUTES = 5
+MAX_MINUTES = 6
 MAX_SCORE_DIFF = 5
 AP_TOP_25_MAX = 25  # College: only alert if at least one team is ranked this or better
 # ESPN's tournamentId for the main NCAA Tournament (March Madness). NIT/CBI/conference use other IDs.
