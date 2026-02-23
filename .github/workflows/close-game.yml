@@ -1,9 +1,9 @@
-# Run close game detector every 5 minutes. No laptop needed.
+# Run close game detector every 2 minutes so we don't miss short close-game windows.
 # Add repository secrets: PUSHOVER_APP_TOKEN, PUSHOVER_USER_KEY
 name: Close game detector
 on:
   schedule:
-    - cron: "*/5 * * * *"   # every 5 minutes
+    - cron: "*/2 * * * *"   # every 2 minutes
   workflow_dispatch:       # allow manual run
 jobs:
   check:

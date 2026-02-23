@@ -1,2 +1,5 @@
 # Close game detector state (do not commit)
 .state/
+
+# macOS
+.DS_Store
