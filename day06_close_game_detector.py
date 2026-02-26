@@ -322,6 +322,9 @@ def process_league(data, league_key, is_college):
         score_diff = abs(home_score - away_score)
         # ESPN clock is per-period; only treat as "final 5 min" in last period (Q4/2nd half) or OT
         if not is_in_final_period(status, is_college):
+            period_str = format_period_college(status) if is_college else format_quarter(status)
+            time_left = format_time_left(status)
+            print(f"  live (not final period yet): {team_a} vs {team_b} | {period_str} {time_left}")
             continue
         minutes_in_period = get_minutes_remaining_in_period(status)
         if minutes_in_period is None:
@@ -370,6 +373,10 @@ def run_one_check():
     except requests.RequestException as e:
         print("Could not fetch NCAA scoreboard:", e)
         ncaa_events = []
+
+    nba_live = len(get_live_game_keys(nba_events, "nba"))
+    ncaa_live = len(get_live_game_keys(ncaa_events, "ncaa"))
+    print(f"NBA: {len(nba_events)} games ({nba_live} in progress) | NCAA: {len(ncaa_events)} games ({ncaa_live} in progress)")
 
     live_keys = get_live_game_keys(nba_events, "nba") | get_live_game_keys(ncaa_events, "ncaa")
     alerted_games &= live_keys
