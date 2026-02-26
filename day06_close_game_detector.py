@@ -3,11 +3,19 @@ import os
 import re
 import sys
 import time
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import requests
 
-NBA_SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
-NCAA_SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard"
+NBA_SCOREBOARD_BASE = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
+NCAA_SCOREBOARD_BASE = "https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard"
+
+
+def _scoreboard_url(base: str) -> str:
+    """Scoreboard URL for 'today' in US Eastern so we get the right slate (including night games)."""
+    eastern_today = datetime.now(ZoneInfo("America/New_York")).strftime("%Y%m%d")
+    return f"{base}?dates={eastern_today}"
 PUSHOVER_URL = "https://api.pushover.net/1/messages.json"
 CHECK_INTERVAL = 5
 MAX_MINUTES = 6
@@ -80,10 +88,18 @@ def clock_string_to_minutes(clock_str):
     return int(m.group(1)) + int(m.group(2)) / 60.0
 
 
+def _period_int(status) -> int:
+    """Period as int (1-4 NBA, 1-2 NCAA, 5+ OT). Returns 0 if missing/invalid."""
+    p = status.get("period", 0) or 0
+    try:
+        return int(p) if p else 0
+    except (TypeError, ValueError):
+        return 0
+
+
 def get_minutes_remaining_in_period(status):
     """Time remaining in the *current period* (quarter/half) in minutes. None if unknown."""
-    period = status.get("period", 0)
-    if not period or period <= 0:
+    if _period_int(status) <= 0:
         return None
     clock_sec = status.get("clock")
     if clock_sec is not None:
@@ -100,7 +116,7 @@ def is_in_final_period(status, is_college):
     NBA: Q4 or OT (period >= 4). NCAA: 2nd half or OT (period >= 2).
     ESPN's clock is per-period, so we only alert in these periods.
     """
-    period = status.get("period", 0) or 0
+    period = _period_int(status)
     if is_college:
         return period >= 2  # 2nd half or OT
     return period >= 4  # Q4 or OT
@@ -309,23 +325,27 @@ def process_league(data, league_key, is_college):
             continue
         minutes_in_period = get_minutes_remaining_in_period(status)
         if minutes_in_period is None:
+            print(f"  skip: {team_a} vs {team_b} — no clock (period {_period_int(status)})")
             continue
-        if minutes_in_period <= MAX_MINUTES and score_diff <= MAX_SCORE_DIFF:
-            game_id = game.get("id") or ""
-            alert_key = f"{league_key}:{game_id}" if game_id else ""
-            if alert_key and alert_key not in alerted_games:
-                period_str = format_period_college(status) if is_college else format_quarter(status)
-                time_left = format_time_left(status)
-                score_str = f"{away_score}-{home_score}"
-                network = get_network(comp)
-                sport = "NCAA" if is_college else "NBA"
-                msg = f"🔥 {team_a} vs {team_b} | {score_str} | {period_str} {time_left}"
-                if network:
-                    msg += f" | {network}"
-                print(f"CLOSE GAME ({sport}): {msg}")
-                send_pushover(f"Close Game ({sport})", msg)
-                alerted_games.add(alert_key)
-            close_count += 1
+        if minutes_in_period > MAX_MINUTES or score_diff > MAX_SCORE_DIFF:
+            print(f"  skip: {team_a} vs {team_b} | {away_score}-{home_score} | {minutes_in_period:.1f} min left, diff {score_diff} (need ≤{MAX_MINUTES} min, ≤{MAX_SCORE_DIFF} pts)")
+            continue
+        # In close window (≤MAX_MINUTES left, ≤MAX_SCORE_DIFF)
+        game_id = game.get("id") or ""
+        alert_key = f"{league_key}:{game_id}" if game_id else ""
+        if alert_key and alert_key not in alerted_games:
+            period_str = format_period_college(status) if is_college else format_quarter(status)
+            time_left = format_time_left(status)
+            score_str = f"{away_score}-{home_score}"
+            network = get_network(comp)
+            sport = "NCAA" if is_college else "NBA"
+            msg = f"🔥 {team_a} vs {team_b} | {score_str} | {period_str} {time_left}"
+            if network:
+                msg += f" | {network}"
+            print(f"CLOSE GAME ({sport}): {msg}")
+            send_pushover(f"Close Game ({sport})", msg)
+            alerted_games.add(alert_key)
+        close_count += 1
     return close_count
 
 
@@ -333,15 +353,17 @@ def run_one_check():
     """Fetch scoreboards, prune and process, return (nba_events, ncaa_events, nba_close, ncaa_close)."""
     global alerted_games
     nba_events, ncaa_events = [], []
+    date_str = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+    print(f"Scoreboard date (Eastern): {date_str}")
     try:
-        resp = requests.get(NBA_SCOREBOARD_URL, timeout=10)
+        resp = requests.get(_scoreboard_url(NBA_SCOREBOARD_BASE), timeout=10)
         resp.raise_for_status()
         nba_events = resp.json().get("events", [])
     except requests.RequestException as e:
         print("Could not fetch NBA scoreboard:", e)
     ncaa_data = {}
     try:
-        resp = requests.get(NCAA_SCOREBOARD_URL, timeout=10)
+        resp = requests.get(_scoreboard_url(NCAA_SCOREBOARD_BASE), timeout=10)
         resp.raise_for_status()
         ncaa_data = resp.json()
         ncaa_events = ncaa_data.get("events", [])
