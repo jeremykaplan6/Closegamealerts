@@ -1,9 +1,9 @@
-# Run close game detector every 2 minutes so we don't miss short close-game windows.
+# Run close game detector every 5 minutes (GitHub's minimum for scheduled workflows).
 # Add repository secrets: PUSHOVER_APP_TOKEN, PUSHOVER_USER_KEY
 name: Close game detector
 on:
   schedule:
-    - cron: "*/2 * * * *"   # every 2 minutes
+    - cron: "*/5 * * * *"   # every 5 minutes (GitHub minimum; */2 is throttled)
   workflow_dispatch:       # allow manual run
 jobs:
   check:
