@@ -275,6 +275,33 @@ def get_live_game_keys(events, league_key):
     return keys
 
 
+def prune_alerted_games(nba_fetch_ok: bool, nba_events, ncaa_fetch_ok: bool, ncaa_events):
+    """
+    Drop alerted keys only for leagues we successfully fetched.
+    If a fetch fails, keep existing keys for that league — otherwise
+    `alerted_games &= live_keys` would drop nba:* keys when NBA returned
+    nothing (timeout/error), and the next run would alert again for the same game.
+    """
+    global alerted_games
+    nba_live = get_live_game_keys(nba_events, "nba") if nba_fetch_ok else None
+    ncaa_live = get_live_game_keys(ncaa_events, "ncaa") if ncaa_fetch_ok else None
+    new = set()
+    for k in alerted_games:
+        if k.startswith("nba:"):
+            if nba_live is None:
+                new.add(k)
+            elif k in nba_live:
+                new.add(k)
+        elif k.startswith("ncaa:"):
+            if ncaa_live is None:
+                new.add(k)
+            elif k in ncaa_live:
+                new.add(k)
+        else:
+            new.add(k)
+    alerted_games = new
+
+
 def process_league(data, league_key, is_college):
     """
     Process events for one league. league_key is 'nba' or 'ncaa' (for dedup).
@@ -358,18 +385,22 @@ def run_one_check():
     nba_events, ncaa_events = [], []
     date_str = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
     print(f"Scoreboard date (Eastern): {date_str}")
+    nba_fetch_ok = False
     try:
         resp = requests.get(_scoreboard_url(NBA_SCOREBOARD_BASE), timeout=10)
         resp.raise_for_status()
         nba_events = resp.json().get("events", [])
+        nba_fetch_ok = True
     except requests.RequestException as e:
         print("Could not fetch NBA scoreboard:", e)
     ncaa_data = {}
+    ncaa_fetch_ok = False
     try:
         resp = requests.get(_scoreboard_url(NCAA_SCOREBOARD_BASE), timeout=10)
         resp.raise_for_status()
         ncaa_data = resp.json()
         ncaa_events = ncaa_data.get("events", [])
+        ncaa_fetch_ok = True
     except requests.RequestException as e:
         print("Could not fetch NCAA scoreboard:", e)
         ncaa_events = []
@@ -378,8 +409,7 @@ def run_one_check():
     ncaa_live = len(get_live_game_keys(ncaa_events, "ncaa"))
     print(f"NBA: {len(nba_events)} games ({nba_live} in progress) | NCAA: {len(ncaa_events)} games ({ncaa_live} in progress)")
 
-    live_keys = get_live_game_keys(nba_events, "nba") | get_live_game_keys(ncaa_events, "ncaa")
-    alerted_games &= live_keys
+    prune_alerted_games(nba_fetch_ok, nba_events, ncaa_fetch_ok, ncaa_events)
 
     nba_close = process_league({"events": nba_events}, "nba", is_college=False)
     ncaa_close = process_league(ncaa_data if ncaa_data else {"events": ncaa_events}, "ncaa", is_college=True)
